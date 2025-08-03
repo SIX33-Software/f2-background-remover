@@ -62,6 +62,7 @@ public class BackgroundRemoverSwift: NSObject {
     }
     
     // Create mask using VNGenerateForegroundInstanceMaskRequest for any foreground objects
+    @available(iOS 17.0, *)
     private func createMask(from inputImage: CIImage) -> CIImage? {
         let request = VNGenerateForegroundInstanceMaskRequest()
         let handler = VNImageRequestHandler(ciImage: inputImage)
@@ -81,6 +82,7 @@ public class BackgroundRemoverSwift: NSObject {
     }
     
     // Apply mask to image using CIFilter.blendWithMask
+    @available(iOS 17.0, *)
     private func applyMask(mask: CIImage, to image: CIImage) -> CIImage {
         let filter = CIFilter.blendWithMask()
         
@@ -92,6 +94,7 @@ public class BackgroundRemoverSwift: NSObject {
     }
     
     // Convert CIImage to UIImage
+    @available(iOS 17.0, *)
     private func convertToUIImage(ciImage: CIImage) -> UIImage {
         let context = CIContext()
         guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else {
