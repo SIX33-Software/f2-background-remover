@@ -1,5 +1,6 @@
 import Vision
 import CoreImage
+import CoreImage.CIFilterBuiltins
 
 public class BackgroundRemoverSwift: NSObject {
     
@@ -10,7 +11,7 @@ public class BackgroundRemoverSwift: NSObject {
         return
         #endif
 
-        if #available(iOS 15.0, *) {
+        if #available(iOS 17.0, *) {
             guard let url = URL(string: imageURI) else {
                 reject("BackgroundRemover", "Invalid URL", NSError(domain: "BackgroundRemover", code: 3))
                 return
@@ -21,54 +22,85 @@ public class BackgroundRemoverSwift: NSObject {
                 return
             }
             
-            let imageRequestHandler = VNImageRequestHandler(ciImage: originalImage)
-            
-            var segmentationRequest = VNGeneratePersonSegmentationRequest()
-            segmentationRequest.qualityLevel = .accurate
-            segmentationRequest.outputPixelFormat = kCVPixelFormatType_OneComponent8
-            
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
-                    try imageRequestHandler.perform([segmentationRequest])
-                    guard let pixelBuffer = segmentationRequest.results?.first?.pixelBuffer else {
-                        reject("BackgroundRemover", "No segmentation results", NSError(domain: "BackgroundRemover", code: 5))
+                    // Create mask for foreground objects
+                    guard let maskImage = self.createMask(from: originalImage) else {
+                        reject("BackgroundRemover", "Failed to create mask", NSError(domain: "BackgroundRemover", code: 5))
                         return
                     }
                     
-                    var maskImage = CIImage(cvPixelBuffer: pixelBuffer)
+                    // Apply mask to remove background
+                    let maskedImage = self.applyMask(mask: maskImage, to: originalImage)
                     
-                    // Adjust mask scaling
-                    let scaleX = originalImage.extent.width / maskImage.extent.width
-                    let scaleY = originalImage.extent.height / maskImage.extent.height
-                    
-                    maskImage = maskImage.transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
-                    
-                    let maskedImage = originalImage.applyingFilter("CIBlendWithMask", parameters: [kCIInputMaskImageKey: maskImage])
-                    
-                    // Convert to UIImage via CGImage for better control
-                    let context = CIContext()
-                    guard let cgMaskedImage = context.createCGImage(maskedImage, from: maskedImage.extent) else {
-                        reject("BackgroundRemover", "Error creating CGImage", NSError(domain: "BackgroundRemover", code: 6))
-                        return
-                    }
-                    
-                    let uiImage = UIImage(cgImage: cgMaskedImage)
+                    // Convert to UIImage
+                    let uiImage = self.convertToUIImage(ciImage: maskedImage)
                     
                     // Save the image as PNG to preserve transparency
                     let tempURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(url.lastPathComponent).appendingPathExtension("png")
-                    if let data = uiImage.pngData() { // Use PNG to preserve transparency
+                    if let data = uiImage.pngData() {
                         try data.write(to: tempURL)
-                        resolve(tempURL.absoluteString)
+                        DispatchQueue.main.async {
+                            resolve(tempURL.absoluteString)
+                        }
                     } else {
-                        reject("BackgroundRemover", "Error saving image", NSError(domain: "BackgroundRemover", code: 7))
+                        DispatchQueue.main.async {
+                            reject("BackgroundRemover", "Error saving image", NSError(domain: "BackgroundRemover", code: 7))
+                        }
                     }
                     
                 } catch {
-                    reject("BackgroundRemover", "Error removing background", error)
+                    DispatchQueue.main.async {
+                        reject("BackgroundRemover", "Error removing background", error)
+                    }
                 }
             }
         } else {
-            reject("BackgroundRemover", "You need a device with iOS 15 or later", NSError(domain: "BackgroundRemover", code: 1))
+            // For iOS < 17.0, return a specific error code that indicates API fallback should be used
+            reject("BackgroundRemover", "REQUIRES_API_FALLBACK", NSError(domain: "BackgroundRemover", code: 1001))
         }
+    }
+    
+    // Create mask using VNGenerateForegroundInstanceMaskRequest for any foreground objects
+    @available(iOS 17.0, *)
+    private func createMask(from inputImage: CIImage) -> CIImage? {
+        let request = VNGenerateForegroundInstanceMaskRequest()
+        let handler = VNImageRequestHandler(ciImage: inputImage)
+        
+        do {
+            try handler.perform([request])
+            
+            if let result = request.results?.first {
+                let mask = try result.generateScaledMaskForImage(forInstances: result.allInstances, from: handler)
+                return CIImage(cvPixelBuffer: mask)
+            }
+        } catch {
+            print("Error creating mask: \(error)")
+        }
+        
+        return nil
+    }
+    
+    // Apply mask to image using CIFilter.blendWithMask
+    @available(iOS 17.0, *)
+    private func applyMask(mask: CIImage, to image: CIImage) -> CIImage {
+        let filter = CIFilter.blendWithMask()
+        
+        filter.inputImage = image
+        filter.maskImage = mask
+        filter.backgroundImage = CIImage.empty()
+        
+        return filter.outputImage ?? image
+    }
+    
+    // Convert CIImage to UIImage
+    @available(iOS 17.0, *)
+    private func convertToUIImage(ciImage: CIImage) -> UIImage {
+        let context = CIContext()
+        guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else {
+            fatalError("Failed to render CGImage")
+        }
+        
+        return UIImage(cgImage: cgImage)
     }
 }

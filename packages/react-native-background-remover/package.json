@@ -1,7 +1,7 @@
 {
-  "name": "react-native-background-remover",
-  "version": "0.3.2",
-  "description": "This package removes background",
+  "name": "@six33/react-native-bg-removal",
+  "version": "1.0.0",
+  "description": "Universal background removal for React Native - removes backgrounds from any foreground objects using iOS 17+ Vision and Android MLKit Subject Segmentation with API fallback support",
   "source": "./src/index.tsx",
   "main": "./lib/commonjs/index.js",
   "module": "./lib/module/index.js",
@@ -41,19 +41,29 @@
   },
   "keywords": [
     "react-native",
+    "background-removal",
+    "vision",
+    "mlkit",
+    "subject-segmentation",
+    "image-processing",
     "ios",
-    "android"
+    "android",
+    "universal",
+    "foreground-detection"
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/atlj/react-native-background-remover.git"
+    "url": "git+https://github.com/SIX33-Software/f2-background-remover.git"
   },
-  "author": "Burak Güner <burak.guner@callstack.com> (https://github.com/atlj)",
+  "author": "SIX33 Software",
+  "contributors": [
+    "Burak Güner <burak.guner@callstack.com> (original implementation)"
+  ],
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/atlj/react-native-background-remover/issues"
+    "url": "https://github.com/SIX33-Software/f2-background-remover/issues"
   },
-  "homepage": "https://github.com/atlj/react-native-background-remover#readme",
+  "homepage": "https://github.com/SIX33-Software/f2-background-remover#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },
