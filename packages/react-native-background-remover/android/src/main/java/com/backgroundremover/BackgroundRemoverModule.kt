@@ -38,8 +38,10 @@ class BackgroundRemoverModule internal constructor(context: ReactApplicationCont
       val foregroundBitmap = result.foregroundBitmap
       
       if (foregroundBitmap != null) {
+        // Crop transparent pixels around the image
+        val croppedBitmap = cropTransparentPixels(foregroundBitmap)
         val fileName = URI(imageURI).path.split("/").last()
-        val savedImageURI = saveImage(foregroundBitmap, fileName)
+        val savedImageURI = saveImage(croppedBitmap, fileName)
         promise.resolve(savedImageURI)
       } else {
         promise.reject("BackgroundRemover", "No foreground detected", null)
@@ -73,6 +75,44 @@ class BackgroundRemoverModule internal constructor(context: ReactApplicationCont
     }
 
     return bitmap
+  }
+
+  private fun cropTransparentPixels(bitmap: Bitmap): Bitmap {
+    val width = bitmap.width
+    val height = bitmap.height
+    
+    var minX = width
+    var minY = height
+    var maxX = -1
+    var maxY = -1
+    
+    // Find the bounds of non-transparent pixels
+    for (y in 0 until height) {
+      for (x in 0 until width) {
+        val pixel = bitmap.getPixel(x, y)
+        val alpha = (pixel shr 24) and 0xFF
+        
+        // If pixel is not transparent
+        if (alpha > 0) {
+          if (x < minX) minX = x
+          if (x > maxX) maxX = x
+          if (y < minY) minY = y
+          if (y > maxY) maxY = y
+        }
+      }
+    }
+    
+    // If no non-transparent pixels found, return a 1x1 transparent bitmap
+    if (maxX == -1 || maxY == -1) {
+      return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+    }
+    
+    // Calculate new dimensions
+    val newWidth = maxX - minX + 1
+    val newHeight = maxY - minY + 1
+    
+    // Create cropped bitmap
+    return Bitmap.createBitmap(bitmap, minX, minY, newWidth, newHeight)
   }
 
   private fun saveImage(bitmap: Bitmap, fileName: String): String {

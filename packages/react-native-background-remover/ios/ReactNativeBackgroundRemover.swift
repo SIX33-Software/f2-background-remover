@@ -36,9 +36,12 @@ public class BackgroundRemoverSwift: NSObject {
                     // Convert to UIImage
                     let uiImage = self.convertToUIImage(ciImage: maskedImage)
                     
+                    // Crop transparent pixels around the image
+                    let croppedImage = self.cropTransparentPixels(from: uiImage)
+                    
                     // Save the image as PNG to preserve transparency
                     let tempURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(url.lastPathComponent).appendingPathExtension("png")
-                    if let data = uiImage.pngData() {
+                    if let data = croppedImage.pngData() {
                         try data.write(to: tempURL)
                         DispatchQueue.main.async {
                             resolve(tempURL.absoluteString)
@@ -59,6 +62,66 @@ public class BackgroundRemoverSwift: NSObject {
             // For iOS < 17.0, return a specific error code that indicates API fallback should be used
             reject("BackgroundRemover", "REQUIRES_API_FALLBACK", NSError(domain: "BackgroundRemover", code: 1001))
         }
+    }
+    
+    // Crop transparent pixels around the image
+    private func cropTransparentPixels(from image: UIImage) -> UIImage {
+        guard let cgImage = image.cgImage else { return image }
+        
+        let width = cgImage.width
+        let height = cgImage.height
+        let bytesPerPixel = 4
+        let bytesPerRow = width * bytesPerPixel
+        let bitsPerComponent = 8
+        
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: bitsPerComponent,
+            bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return image }
+        
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        
+        guard let data = context.data else { return image }
+        let buffer = data.bindMemory(to: UInt8.self, capacity: width * height * bytesPerPixel)
+        
+        var minX = width
+        var minY = height
+        var maxX = -1
+        var maxY = -1
+        
+        // Find bounds of non-transparent pixels
+        for y in 0..<height {
+            for x in 0..<width {
+                let pixelIndex = (y * width + x) * bytesPerPixel
+                let alpha = buffer[pixelIndex + 3]
+                
+                // If pixel is not transparent
+                if alpha > 0 {
+                    if x < minX { minX = x }
+                    if x > maxX { maxX = x }
+                    if y < minY { minY = y }
+                    if y > maxY { maxY = y }
+                }
+            }
+        }
+        
+        // If no non-transparent pixels found, return a 1x1 transparent image
+        guard maxX >= 0 && maxY >= 0 && minX <= maxX && minY <= maxY else {
+            return UIImage()
+        }
+        
+        // Calculate crop rect
+        let cropRect = CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
+        
+        // Crop the image
+        guard let croppedCGImage = cgImage.cropping(to: cropRect) else { return image }
+        
+        return UIImage(cgImage: croppedCGImage, scale: image.scale, orientation: image.imageOrientation)
     }
     
     // Create mask using VNGenerateForegroundInstanceMaskRequest for any foreground objects
