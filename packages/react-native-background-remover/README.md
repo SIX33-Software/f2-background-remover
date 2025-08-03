@@ -23,7 +23,7 @@ const backgroundRemovedImageURI = removeBackground(imageURI);
 
 > Note: You need to use a real device on iOS to use this package. Otherwise, it will throw a warning and return the original image. You can still use an emulator on Android.
 
-> Note: This only works with iOS 17 and above. Otherwise, you will get an error.
+> Note: For iOS 17+, uses native ML for universal background removal. For iOS 15.1-16.x, throws 'REQUIRES_API_FALLBACK' error to use your API instead.
 
 > Note: This requires Android API level 24 or above for the Subject Segmentation feature.
 
