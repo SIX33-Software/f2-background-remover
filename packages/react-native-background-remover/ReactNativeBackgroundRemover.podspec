@@ -12,7 +12,7 @@ Pod::Spec.new do |s|
   s.authors      = package["author"]
 
   s.platforms    = { :ios => "15.1" }
-  s.source       = { :git => "https://github.com/atlj/react-native-background-remover.git", :tag => "#{s.version}" }
+  s.source       = { :git => "https://github.com/SIX33-Software/f2-background-remover.git", :tag => "#{s.version}" }
 
   s.source_files = "ios/**/*.{h,m,mm,swift}"
 
