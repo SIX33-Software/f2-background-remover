@@ -56,7 +56,8 @@ public class BackgroundRemoverSwift: NSObject {
                 }
             }
         } else {
-            reject("BackgroundRemover", "You need a device with iOS 17 or later", NSError(domain: "BackgroundRemover", code: 1))
+            // For iOS < 17.0, return a specific error code that indicates API fallback should be used
+            reject("BackgroundRemover", "REQUIRES_API_FALLBACK", NSError(domain: "BackgroundRemover", code: 1001))
         }
     }
     
