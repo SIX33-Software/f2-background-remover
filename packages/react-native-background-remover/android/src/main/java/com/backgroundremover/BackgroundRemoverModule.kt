@@ -1,12 +1,7 @@
 package com.backgroundremover
 
 import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.ImageDecoder
-import android.graphics.Paint
-import android.graphics.PorterDuff
-import android.graphics.PorterDuffXfermode
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
@@ -14,17 +9,16 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactMethod
 import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.segmentation.Segmentation
-import com.google.mlkit.vision.segmentation.Segmenter
-import com.google.mlkit.vision.segmentation.selfie.SelfieSegmenterOptions
+import com.google.mlkit.vision.segmentation.subject.SubjectSegmentation
+import com.google.mlkit.vision.segmentation.subject.SubjectSegmenter
+import com.google.mlkit.vision.segmentation.subject.SubjectSegmenterOptions
 import java.io.File
 import java.io.FileOutputStream
 import java.net.URI
-import kotlin.math.pow
 
 class BackgroundRemoverModule internal constructor(context: ReactApplicationContext) :
   BackgroundRemoverSpec(context) {
-  private var segmenter: Segmenter? = null
+  private var segmenter: SubjectSegmenter? = null
 
   override fun getName(): String {
     return NAME
@@ -40,34 +34,25 @@ class BackgroundRemoverModule internal constructor(context: ReactApplicationCont
     segmenter.process(inputImage).addOnFailureListener { e ->
       promise.reject(e)
     }.addOnSuccessListener { result ->
-      val maskBuffer = result.buffer
-      val mask = Bitmap.createBitmap(result.width, result.height, Bitmap.Config.ARGB_8888)
-
-      for (y in 0 until result.height) {
-        for (x in 0 until result.width) {
-          val alpha = maskBuffer.getFloat().pow(4)
-          mask.setPixel(x, y, Color.argb((alpha * 255).toInt(), 0, 0, 0))
-        }
+      // Get the foreground bitmap directly from the result
+      val foregroundBitmap = result.foregroundBitmap
+      
+      if (foregroundBitmap != null) {
+        val fileName = URI(imageURI).path.split("/").last()
+        val savedImageURI = saveImage(foregroundBitmap, fileName)
+        promise.resolve(savedImageURI)
+      } else {
+        promise.reject("BackgroundRemover", "No foreground detected", null)
       }
-
-      val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-      paint.setXfermode(PorterDuffXfermode(PorterDuff.Mode.DST_IN))
-      val canvas = Canvas(image)
-      canvas.drawBitmap(mask, 0f, 0f, paint)
-
-      val fileName = URI(imageURI).path.split("/").last()
-      val savedImageURI = saveImage(image, fileName)
-      promise.resolve(savedImageURI)
     }
   }
 
-  private fun createSegmenter(): Segmenter {
-    val options =
-      SelfieSegmenterOptions.Builder()
-        .setDetectorMode(SelfieSegmenterOptions.SINGLE_IMAGE_MODE)
-        .build()
+  private fun createSegmenter(): SubjectSegmenter {
+    val options = SubjectSegmenterOptions.Builder()
+      .enableForegroundBitmap()  // Enable getting foreground bitmap directly
+      .build()
 
-    val segmenter = Segmentation.getClient(options)
+    val segmenter = SubjectSegmentation.getClient(options)
     this.segmenter = segmenter
 
     return segmenter
@@ -91,9 +76,11 @@ class BackgroundRemoverModule internal constructor(context: ReactApplicationCont
   }
 
   private fun saveImage(bitmap: Bitmap, fileName: String): String {
-    val file = File(reactApplicationContext.filesDir, fileName)
+    // Use PNG format to preserve transparency from background removal
+    val pngFileName = fileName.substringBeforeLast('.') + ".png"
+    val file = File(reactApplicationContext.filesDir, pngFileName)
     val fileOutputStream = FileOutputStream(file)
-    bitmap.compress(Bitmap.CompressFormat.JPEG, 100, fileOutputStream)
+    bitmap.compress(Bitmap.CompressFormat.PNG, 100, fileOutputStream)
     fileOutputStream.close()
     return file.toURI().toString()
   }

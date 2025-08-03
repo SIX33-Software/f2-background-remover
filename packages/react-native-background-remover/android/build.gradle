@@ -115,7 +115,7 @@ dependencies {
   implementation "com.facebook.react:react-native:+"
   implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
 
-  implementation 'com.google.mlkit:segmentation-selfie:16.0.0-beta4' // <- MLKit dependency
+  implementation 'com.google.android.gms:play-services-mlkit-subject-segmentation:16.0.0-beta1' // <- MLKit Subject Segmentation dependency
 }
 
 if (isNewArchitectureEnabled()) {
