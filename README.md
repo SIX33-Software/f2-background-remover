@@ -3,8 +3,10 @@
 Universal background removal for React Native - removes backgrounds from any foreground objects using iOS 17+ Vision and Android MLKit Subject Segmentation with API fallback support.
 
 <div align="center">
-  <video src="https://github.com/user-attachments/assets/ce62728f-69fb-46d2-8016-7d03f751708e" width="400" />
+  <video src="https://github.com/user-attachments/assets/1f95fe30-5bce-463b-8d8b-5ca8fb5a0031" width="400" />
 </div>
+
+
 
 ## ✨ Features
 
