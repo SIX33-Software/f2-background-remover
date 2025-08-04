@@ -9,7 +9,7 @@ module.exports = {
       {
         extensions: ['.tsx', '.ts', '.js', '.json'],
         alias: {
-          'react-native-background-remover': path.join(
+          '@six33/react-native-bg-removal': path.join(
             __dirname,
             '../../packages/react-native-background-remover',
             pak.source

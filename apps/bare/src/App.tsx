@@ -4,7 +4,7 @@ import { StyleSheet, View } from 'react-native';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { Button } from 'react-native';
 import { Image } from 'react-native';
-import { removeBackground } from 'react-native-background-remover';
+import { removeBackground } from '@six33/react-native-bg-removal';
 import { ActivityIndicator } from 'react-native';
 
 export default function App() {
