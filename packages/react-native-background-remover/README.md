@@ -220,7 +220,7 @@ For large images (>1MP) on devices with 4+ CPU cores:
 | **Android** | API 24+ | MLKit Subject Segmentation |
 
 ## Error Handling 
-TODO: Improve
+TODO: This will be improved in the future
 ```js
 import { removeBackground } from '@six33/react-native-bg-removal';
 
