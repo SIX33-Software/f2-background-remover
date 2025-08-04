@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.1](https://github.com/SIX33-Software/f2-background-remover/compare/react-native-bg-removal-v1.3.0...react-native-bg-removal-v1.3.1) (2025-08-04)
+
+
+### 🐛 Bug Fixes
+
+* add note ([92a3372](https://github.com/SIX33-Software/f2-background-remover/commit/92a3372aaec281f4a070ffe9dffeef66ca7c7332))
+* add note to README.md ([f83d3f1](https://github.com/SIX33-Software/f2-background-remover/commit/f83d3f1ae13020e9c208f4171942e6611dfc0fa5))
+
 ## [1.3.0](https://github.com/SIX33-Software/f2-background-remover/compare/react-native-bg-removal-v1.2.0...react-native-bg-removal-v1.3.0) (2025-08-04)
 
 
