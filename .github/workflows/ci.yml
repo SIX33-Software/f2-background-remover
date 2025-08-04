@@ -92,6 +92,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
+      - name: Clean Android build cache
+        run: |
+          rm -rf packages/react-native-background-remover/android/build
+          rm -rf apps/bare/android/app/build
+
       - name: Build example for Android
         env:
           JAVA_OPTS: "-XX:MaxHeapSize=6g"
