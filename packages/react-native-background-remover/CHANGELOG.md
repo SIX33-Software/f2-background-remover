@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/SIX33-Software/f2-background-remover/compare/react-native-bg-removal-v1.1.0...react-native-bg-removal-v1.2.0) (2025-08-04)
+
+
+### 🚀 Features
+
+* add options parameter ([a1e043a](https://github.com/SIX33-Software/f2-background-remover/commit/a1e043adf9680618b162585974b39b4cbb7d9fc1))
+
 ## [1.1.0](https://github.com/SIX33-Software/f2-background-remover/compare/react-native-bg-removal-v1.0.0...react-native-bg-removal-v1.1.0) (2025-08-04)
 
 
