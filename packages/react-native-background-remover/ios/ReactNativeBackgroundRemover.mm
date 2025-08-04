@@ -25,10 +25,11 @@ RCT_EXPORT_MODULE()
 }
 
 RCT_EXPORT_METHOD(removeBackground:(NSString *)imageURI
+                 withOptions:(NSDictionary *)options
                  resolve:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject)
 {
-    [backgroundRemover removeBackground:imageURI resolve:resolve reject:reject];
+    [backgroundRemover removeBackground:imageURI options:options resolve:resolve reject:reject];
 }
 
 // Don't compile this code when we build for the old architecture.

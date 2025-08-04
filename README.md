@@ -31,8 +31,13 @@ import { removeBackground } from '@six33/react-native-bg-removal';
 
 try {
   // You can get the imageURI from the camera or gallery
-  const backgroundRemovedImageURI = await removeBackground(imageURI);
-  console.log('Success:', backgroundRemovedImageURI);
+  // By default, transparent pixels are trimmed
+  const trimmedImageURI = await removeBackground(imageURI);
+  
+  // To disable trimming use:
+  const untrimmedImageURI = await removeBackground(imageURI, { trim: false });
+
+  console.log('Success:', trimmedImageURI);
 } catch (error) {
   console.error('Background removal failed:', error.message);
 }
@@ -40,12 +45,14 @@ try {
 
 ## API Reference
 
-### `removeBackground(imageURI: string): Promise<string>`
+### `removeBackground(imageURI: string, options?: RemovalOptions): Promise<string>`
 
 Removes the background from an image and returns the processed image URI.
 
 **Parameters:**
 - `imageURI` (string): The URI of the image to process
+- `options` (object, optional):
+  - `trim` (boolean, default: `true`): If `true`, trims transparent pixels from the output image.
 
 **Returns:**
 - `Promise<string>`: URI of the processed image with background removed

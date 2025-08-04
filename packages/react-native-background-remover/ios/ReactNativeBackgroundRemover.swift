@@ -5,13 +5,14 @@ import CoreImage.CIFilterBuiltins
 public class BackgroundRemoverSwift: NSObject {
     
     @objc
-    public func removeBackground(_ imageURI: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) -> Void {
+    public func removeBackground(_ imageURI: String, options: [String: Any], resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) -> Void {
         #if targetEnvironment(simulator)
         reject("BackgroundRemover", "SimulatorError", NSError(domain: "BackgroundRemover", code: 2))
         return
         #endif
 
         if #available(iOS 17.0, *) {
+            let trim = options["trim"] as? Bool ?? true
             guard let url = URL(string: imageURI) else {
                 reject("BackgroundRemover", "Invalid URL", NSError(domain: "BackgroundRemover", code: 3))
                 return
@@ -35,13 +36,17 @@ public class BackgroundRemoverSwift: NSObject {
                     
                     // Convert to UIImage
                     let uiImage = self.convertToUIImage(ciImage: maskedImage)
-                    
-                    // Crop transparent pixels around the image
-                    let croppedImage = self.cropTransparentPixels(from: uiImage)
+
+                    let finalImage = if trim {
+                        // Trim transparent pixels around the image
+                        self.trimTransparentPixels(from: uiImage)
+                    } else {
+                        uiImage
+                    }
                     
                     // Save the image as PNG to preserve transparency
                     let tempURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(url.lastPathComponent).appendingPathExtension("png")
-                    if let data = croppedImage.pngData() {
+                    if let data = finalImage.pngData() {
                         try data.write(to: tempURL)
                         DispatchQueue.main.async {
                             resolve(tempURL.absoluteString)
@@ -64,19 +69,19 @@ public class BackgroundRemoverSwift: NSObject {
         }
     }
     
-    // Crop transparent pixels around the image
-    private func cropTransparentPixels(from image: UIImage) -> UIImage {
+    // Trim transparent pixels around the image
+    private func trimTransparentPixels(from image: UIImage) -> UIImage {
         guard let cgImage = image.cgImage else { return image }
         
         let totalPixels = cgImage.width * cgImage.height
         let coreCount = ProcessInfo.processInfo.processorCount
         
         return (totalPixels > 1000000 && coreCount >= 4) ? 
-            cropTransparentPixelsParallel(from: image) : 
-            cropTransparentPixelsSequential(from: image)
+            trimTransparentPixelsParallel(from: image) : 
+            trimTransparentPixelsSequential(from: image)
     }
     
-    private func cropTransparentPixelsSequential(from image: UIImage) -> UIImage {
+    private func trimTransparentPixelsSequential(from image: UIImage) -> UIImage {
         guard let cgImage = image.cgImage else { return image }
         
         let width = cgImage.width
@@ -136,7 +141,7 @@ public class BackgroundRemoverSwift: NSObject {
     }
     
     // Parallel implementation for large images
-    private func cropTransparentPixelsParallel(from image: UIImage) -> UIImage {
+    private func trimTransparentPixelsParallel(from image: UIImage) -> UIImage {
         guard let cgImage = image.cgImage else { return image }
         
         let width = cgImage.width
