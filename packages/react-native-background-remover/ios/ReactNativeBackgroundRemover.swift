@@ -68,6 +68,17 @@ public class BackgroundRemoverSwift: NSObject {
     private func cropTransparentPixels(from image: UIImage) -> UIImage {
         guard let cgImage = image.cgImage else { return image }
         
+        let totalPixels = cgImage.width * cgImage.height
+        let coreCount = ProcessInfo.processInfo.processorCount
+        
+        return (totalPixels > 1000000 && coreCount >= 4) ? 
+            cropTransparentPixelsParallel(from: image) : 
+            cropTransparentPixelsSequential(from: image)
+    }
+    
+    private func cropTransparentPixelsSequential(from image: UIImage) -> UIImage {
+        guard let cgImage = image.cgImage else { return image }
+        
         let width = cgImage.width
         let height = cgImage.height
         let bytesPerPixel = 4
@@ -122,6 +133,144 @@ public class BackgroundRemoverSwift: NSObject {
         guard let croppedCGImage = cgImage.cropping(to: cropRect) else { return image }
         
         return UIImage(cgImage: croppedCGImage, scale: image.scale, orientation: image.imageOrientation)
+    }
+    
+    // Parallel implementation for large images
+    private func cropTransparentPixelsParallel(from image: UIImage) -> UIImage {
+        guard let cgImage = image.cgImage else { return image }
+        
+        let width = cgImage.width
+        let height = cgImage.height
+        let coreCount = ProcessInfo.processInfo.processorCount
+        
+        // Setup shared context for pixel data access
+        let bytesPerPixel = 4
+        let bytesPerRow = width * bytesPerPixel
+        let bitsPerComponent = 8
+        
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: bitsPerComponent,
+            bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return image }
+        
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        
+        guard let data = context.data else { return image }
+        let buffer = data.bindMemory(to: UInt8.self, capacity: width * height * bytesPerPixel)
+        
+        // Use optimal number of threads based on available cores (min 4, max 8)
+        let threadCount = min(max(coreCount, 4), 8)
+        
+        // Split into optimal number of regions based on thread count
+        let quadrants: [QuadrantRect]
+        if threadCount == 4 {
+            // Classic 4-quadrant split for 4 cores
+            let halfWidth = width / 2
+            let halfHeight = height / 2
+            quadrants = [
+                QuadrantRect(startX: 0, startY: 0, endX: halfWidth, endY: halfHeight),           // Top-left
+                QuadrantRect(startX: halfWidth, startY: 0, endX: width, endY: halfHeight),      // Top-right (gets extra width if odd)
+                QuadrantRect(startX: 0, startY: halfHeight, endX: halfWidth, endY: height),     // Bottom-left (gets extra height if odd)
+                QuadrantRect(startX: halfWidth, startY: halfHeight, endX: width, endY: height)  // Bottom-right (gets both extras if odd)
+            ]
+        } else {
+            // For more cores, split into horizontal strips for better cache locality
+            let stripHeight = height / threadCount
+            quadrants = (0..<threadCount).map { i in
+                let startY = i * stripHeight
+                let endY = (i == threadCount - 1) ? height : (i + 1) * stripHeight
+                return QuadrantRect(startX: 0, startY: startY, endX: width, endY: endY)
+            }
+        }
+        
+        // Process regions concurrently using GCD
+        let group = DispatchGroup()
+        let queue = DispatchQueue(label: "crop.parallel", attributes: .concurrent)
+        var results: [QuadrantBounds] = Array(repeating: QuadrantBounds(), count: threadCount)
+        
+        for (index, quadrant) in quadrants.enumerated() {
+            group.enter()
+            queue.async {
+                results[index] = self.findBoundsInQuadrant(buffer: buffer, quadrant: quadrant, width: width, bytesPerPixel: bytesPerPixel)
+                group.leave()
+            }
+        }
+        
+        group.wait()
+        
+        let globalBounds = mergeBounds(results: results)
+        
+        guard globalBounds.isValid else { 
+            return UIImage() // Return empty image if no non-transparent pixels found
+        }
+        
+        let cropRect = CGRect(x: globalBounds.minX, y: globalBounds.minY, 
+                             width: globalBounds.width, height: globalBounds.height)
+        
+        guard let croppedCGImage = cgImage.cropping(to: cropRect) else { return image }
+        
+        return UIImage(cgImage: croppedCGImage, scale: image.scale, orientation: image.imageOrientation)
+    }
+    
+    private struct QuadrantRect {
+        let startX: Int
+        let startY: Int
+        let endX: Int
+        let endY: Int
+    }
+    
+    private struct QuadrantBounds {
+        var minX: Int = Int.max
+        var minY: Int = Int.max
+        var maxX: Int = -1
+        var maxY: Int = -1
+        
+        var isValid: Bool { maxX >= 0 && maxY >= 0 }
+        var width: Int { maxX - minX + 1 }
+        var height: Int { maxY - minY + 1 }
+    }
+    
+    private func findBoundsInQuadrant(buffer: UnsafeMutablePointer<UInt8>, quadrant: QuadrantRect, width: Int, bytesPerPixel: Int) -> QuadrantBounds {
+        var bounds = QuadrantBounds()
+        
+        // Scan only the pixels in this quadrant
+        for y in quadrant.startY..<quadrant.endY {
+            for x in quadrant.startX..<quadrant.endX {
+                let pixelIndex = (y * width + x) * bytesPerPixel
+                let alpha = buffer[pixelIndex + 3]
+                
+                // If pixel is not transparent
+                if alpha > 0 {
+                    if x < bounds.minX { bounds.minX = x }
+                    if x > bounds.maxX { bounds.maxX = x }
+                    if y < bounds.minY { bounds.minY = y }
+                    if y > bounds.maxY { bounds.maxY = y }
+                }
+            }
+        }
+        
+        return bounds
+    }
+    
+    private func mergeBounds(results: [QuadrantBounds]) -> QuadrantBounds {
+        let validResults = results.filter { $0.isValid }
+        
+        guard !validResults.isEmpty else {
+            return QuadrantBounds() // Invalid bounds
+        }
+        
+        var merged = QuadrantBounds()
+        merged.minX = validResults.map { $0.minX }.min() ?? Int.max
+        merged.minY = validResults.map { $0.minY }.min() ?? Int.max
+        merged.maxX = validResults.map { $0.maxX }.max() ?? -1
+        merged.maxY = validResults.map { $0.maxY }.max() ?? -1
+        
+        return merged
     }
     
     // Create mask using VNGenerateForegroundInstanceMaskRequest for any foreground objects

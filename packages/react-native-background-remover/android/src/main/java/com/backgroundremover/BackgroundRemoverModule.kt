@@ -15,6 +15,8 @@ import com.google.mlkit.vision.segmentation.subject.SubjectSegmenterOptions
 import java.io.File
 import java.io.FileOutputStream
 import java.net.URI
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
 
 class BackgroundRemoverModule internal constructor(context: ReactApplicationContext) :
   BackgroundRemoverSpec(context) {
@@ -78,6 +80,17 @@ class BackgroundRemoverModule internal constructor(context: ReactApplicationCont
   }
 
   private fun cropTransparentPixels(bitmap: Bitmap): Bitmap {
+    val totalPixels = bitmap.width * bitmap.height
+    val coreCount = Runtime.getRuntime().availableProcessors()
+    
+    return if (totalPixels > 1000000 && coreCount >= 4) {
+      cropTransparentPixelsParallel(bitmap)
+    } else {
+      cropTransparentPixelsSequential(bitmap)
+    }
+  }
+
+  private fun cropTransparentPixelsSequential(bitmap: Bitmap): Bitmap {
     val width = bitmap.width
     val height = bitmap.height
     
@@ -113,6 +126,118 @@ class BackgroundRemoverModule internal constructor(context: ReactApplicationCont
     
     // Create cropped bitmap
     return Bitmap.createBitmap(bitmap, minX, minY, newWidth, newHeight)
+  }
+
+  // Parallel implementation for large images
+  private fun cropTransparentPixelsParallel(bitmap: Bitmap): Bitmap {
+    val width = bitmap.width
+    val height = bitmap.height
+    val coreCount = Runtime.getRuntime().availableProcessors()
+    
+    // Use optimal number of threads based on available cores (min 4, max 8)
+    val threadCount = minOf(maxOf(coreCount, 4), 8)
+    
+    // Split into optimal number of regions based on thread count
+    val quadrants = if (threadCount == 4) {
+      // Classic 4-quadrant split for 4 cores
+      val halfWidth = width / 2
+      val halfHeight = height / 2
+      listOf(
+        Quadrant(0, 0, halfWidth, halfHeight),                    // Top-left
+        Quadrant(halfWidth, 0, width, halfHeight),               // Top-right (gets extra width if odd)
+        Quadrant(0, halfHeight, halfWidth, height),              // Bottom-left (gets extra height if odd)
+        Quadrant(halfWidth, halfHeight, width, height)           // Bottom-right (gets both extras if odd)
+      )
+    } else {
+      // For more cores, split into horizontal strips for better cache locality
+      val stripHeight = height / threadCount
+      (0 until threadCount).map { i ->
+        val startY = i * stripHeight
+        val endY = if (i == threadCount - 1) height else (i + 1) * stripHeight
+        Quadrant(0, startY, width, endY)
+      }
+    }
+    
+    // Process regions in parallel using adaptive thread pool
+    val executor = Executors.newFixedThreadPool(threadCount)
+    val futures = quadrants.map { quadrant ->
+      executor.submit<QuadrantBounds> {
+        findBoundsInQuadrant(bitmap, quadrant)
+      }
+    }
+    
+    // Collect results from all threads
+    val results = futures.map { it.get() }
+    executor.shutdown()
+    
+    // Merge bounds from all quadrants to get global bounds
+    val globalBounds = mergeBounds(results)
+    
+    // Return cropped bitmap or fallback to 1x1 transparent
+    return if (globalBounds.isValid()) {
+      Bitmap.createBitmap(
+        bitmap, 
+        globalBounds.minX, 
+        globalBounds.minY, 
+        globalBounds.width(), 
+        globalBounds.height()
+      )
+    } else {
+      Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+    }
+  }
+
+  // Helper data classes for parallel processing
+  private data class Quadrant(val startX: Int, val startY: Int, val endX: Int, val endY: Int)
+  
+  private data class QuadrantBounds(val minX: Int, val minY: Int, val maxX: Int, val maxY: Int) {
+    fun isValid() = maxX >= 0 && maxY >= 0
+    fun width() = maxX - minX + 1
+    fun height() = maxY - minY + 1
+  }
+
+  private fun findBoundsInQuadrant(bitmap: Bitmap, quadrant: Quadrant): QuadrantBounds {
+    var minX = Int.MAX_VALUE
+    var minY = Int.MAX_VALUE  
+    var maxX = -1
+    var maxY = -1
+    
+    // Scan only the pixels in this quadrant
+    for (y in quadrant.startY until quadrant.endY) {
+      for (x in quadrant.startX until quadrant.endX) {
+        val pixel = bitmap.getPixel(x, y)
+        val alpha = (pixel shr 24) and 0xFF
+        
+        if (alpha > 0) {
+          if (x < minX) minX = x
+          if (x > maxX) maxX = x
+          if (y < minY) minY = y  
+          if (y > maxY) maxY = y
+        }
+      }
+    }
+    
+    return QuadrantBounds(
+      if (minX == Int.MAX_VALUE) -1 else minX,
+      if (minY == Int.MAX_VALUE) -1 else minY,
+      maxX,
+      maxY
+    )
+  }
+
+  private fun mergeBounds(results: List<QuadrantBounds>): QuadrantBounds {
+    val validResults = results.filter { it.isValid() }
+    
+    if (validResults.isEmpty()) {
+      return QuadrantBounds(-1, -1, -1, -1)
+    }
+    
+    return QuadrantBounds(
+      minX = validResults.minOf { it.minX },
+      minY = validResults.minOf { it.minY }, 
+      maxX = validResults.maxOf { it.maxX },
+      maxY = validResults.maxOf { it.maxY }
+    )
   }
 
   private fun saveImage(bitmap: Bitmap, fileName: String): String {
