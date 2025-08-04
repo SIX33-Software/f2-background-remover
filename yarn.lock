@@ -3461,7 +3461,17 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@six33/react-native-bg-removal@npm:1.2.0, @six33/react-native-bg-removal@workspace:packages/react-native-background-remover":
+"@six33/react-native-bg-removal@npm:1.2.0":
+  version: 1.2.0
+  resolution: "@six33/react-native-bg-removal@npm:1.2.0"
+  peerDependencies:
+    react: "*"
+    react-native: "*"
+  checksum: 10/19387248e1077187c6456607436ccc813ec250a37f734e59de870a01c9f6e795b10980c4536c3a62efaab08a20429b21cfaed0999e8346b491a0ce23251a5a0d
+  languageName: node
+  linkType: hard
+
+"@six33/react-native-bg-removal@workspace:packages/react-native-background-remover":
   version: 0.0.0-use.local
   resolution: "@six33/react-native-bg-removal@workspace:packages/react-native-background-remover"
   dependencies:
