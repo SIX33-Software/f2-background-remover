@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       releases_created: ${{ steps.release.outputs.releases_created }}
-      tag_name: ${{ steps.release.outputs.tag_name }}
+      tag_name: ${{ steps.release.outputs['packages/react-native-background-remover--tag_name'] }}
     steps:
       - name: Run Release Please
         uses: google-github-actions/release-please-action@v4
@@ -54,6 +54,7 @@ jobs:
           NPM_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
 
       - name: Comment on release
+        if: needs.release-please.outputs.tag_name != ''
         run: |
           gh release edit ${{ needs.release-please.outputs.tag_name }} \
             --notes-file packages/react-native-background-remover/CHANGELOG.md \
