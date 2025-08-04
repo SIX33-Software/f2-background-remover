@@ -8,6 +8,7 @@ import android.provider.MediaStore
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.ReadableMap
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.segmentation.subject.SubjectSegmentation
 import com.google.mlkit.vision.segmentation.subject.SubjectSegmenter
@@ -27,7 +28,8 @@ class BackgroundRemoverModule internal constructor(context: ReactApplicationCont
   }
 
   @ReactMethod
-  override fun removeBackground(imageURI: String, promise: Promise) {
+  override fun removeBackground(imageURI: String, options: ReadableMap, promise: Promise) {
+    val trim = if (options.hasKey("trim")) options.getBoolean("trim") else true
     val segmenter = this.segmenter ?: createSegmenter()
     val image = getImageBitmap(imageURI)
 
@@ -40,10 +42,14 @@ class BackgroundRemoverModule internal constructor(context: ReactApplicationCont
       val foregroundBitmap = result.foregroundBitmap
       
       if (foregroundBitmap != null) {
-        // Crop transparent pixels around the image
-        val croppedBitmap = cropTransparentPixels(foregroundBitmap)
+        val finalBitmap = if (trim) {
+          // Trim transparent pixels around the image
+          trimTransparentPixels(foregroundBitmap)
+        } else {
+          foregroundBitmap
+        }
         val fileName = URI(imageURI).path.split("/").last()
-        val savedImageURI = saveImage(croppedBitmap, fileName)
+        val savedImageURI = saveImage(finalBitmap, fileName)
         promise.resolve(savedImageURI)
       } else {
         promise.reject("BackgroundRemover", "No foreground detected", null)
@@ -79,18 +85,18 @@ class BackgroundRemoverModule internal constructor(context: ReactApplicationCont
     return bitmap
   }
 
-  private fun cropTransparentPixels(bitmap: Bitmap): Bitmap {
+  private fun trimTransparentPixels(bitmap: Bitmap): Bitmap {
     val totalPixels = bitmap.width * bitmap.height
     val coreCount = Runtime.getRuntime().availableProcessors()
     
     return if (totalPixels > 1000000 && coreCount >= 4) {
-      cropTransparentPixelsParallel(bitmap)
+      trimTransparentPixelsParallel(bitmap)
     } else {
-      cropTransparentPixelsSequential(bitmap)
+      trimTransparentPixelsSequential(bitmap)
     }
   }
 
-  private fun cropTransparentPixelsSequential(bitmap: Bitmap): Bitmap {
+  private fun trimTransparentPixelsSequential(bitmap: Bitmap): Bitmap {
     val width = bitmap.width
     val height = bitmap.height
     
@@ -129,7 +135,7 @@ class BackgroundRemoverModule internal constructor(context: ReactApplicationCont
   }
 
   // Parallel implementation for large images
-  private fun cropTransparentPixelsParallel(bitmap: Bitmap): Bitmap {
+  private fun trimTransparentPixelsParallel(bitmap: Bitmap): Bitmap {
     val width = bitmap.width
     val height = bitmap.height
     val coreCount = Runtime.getRuntime().availableProcessors()
