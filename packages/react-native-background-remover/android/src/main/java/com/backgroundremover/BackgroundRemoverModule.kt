@@ -19,8 +19,6 @@ import java.net.URI
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 
-import com.facebook.react.bridge.ReadableMap
-
 class BackgroundRemoverModule internal constructor(context: ReactApplicationContext) :
   BackgroundRemoverSpec(context) {
   private var segmenter: SubjectSegmenter? = null
