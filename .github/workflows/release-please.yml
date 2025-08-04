@@ -1,0 +1,61 @@
+name: Release Please
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - name: Run Release Please
+        uses: google-github-actions/release-please-action@v4
+        id: release
+        with:
+          # Configuration for monorepo with package in subdirectory
+          config-file: .github/release-please-config.json
+          manifest-file: .github/.release-please-manifest.json
+
+  publish:
+    needs: release-please
+    runs-on: ubuntu-latest
+    if: needs.release-please.outputs.release_created
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Verify package integrity
+        run: |
+          cd packages/react-native-background-remover
+          npm audit --audit-level=high
+          yarn lint
+          yarn typecheck
+
+      - name: Build and prepare package
+        run: cd packages/react-native-background-remover && yarn prepare
+
+      - name: Publish to npm
+        run: cd packages/react-native-background-remover && npm publish --provenance --access public
+        env:
+          NPM_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
+
+      - name: Comment on release
+        run: |
+          gh release edit ${{ needs.release-please.outputs.tag_name }} \
+            --notes-file packages/react-native-background-remover/CHANGELOG.md \
+            --title "🚀 Release ${{ needs.release-please.outputs.tag_name }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

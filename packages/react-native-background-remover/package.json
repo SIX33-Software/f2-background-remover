@@ -36,8 +36,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "clean": "del-cli android/build example/android/build example/android/app/build example/ios/build lib",
-    "prepare": "cp ../../README.md ./ && bob build",
-    "release": "release-it"
+    "prepare": "cp ../../README.md ./ && bob build"
   },
   "keywords": [
     "react-native",
@@ -69,7 +68,6 @@
   },
   "devDependencies": {
     "@commitlint/config-conventional": "^17.0.2",
-    "@release-it/conventional-changelog": "^5.0.0",
     "@types/jest": "^29.5.5",
     "@types/react": "^18.2.44",
     "del-cli": "^5.1.0",
@@ -77,7 +75,6 @@
     "react": "18.2.0",
     "react-native": "0.74.3",
     "react-native-builder-bob": "^0.26.0",
-    "release-it": "^15.0.0",
     "typescript": "^5.2.2"
   },
   "peerDependencies": {
@@ -90,23 +87,6 @@
       "<rootDir>/example/node_modules",
       "<rootDir>/lib/"
     ]
-  },
-  "release-it": {
-    "git": {
-      "commitMessage": "chore: release ${version}",
-      "tagName": "v${version}"
-    },
-    "npm": {
-      "publish": true
-    },
-    "github": {
-      "release": true
-    },
-    "plugins": {
-      "@release-it/conventional-changelog": {
-        "preset": "angular"
-      }
-    }
   },
   "react-native-builder-bob": {
     "source": "src",

@@ -1,28 +1,81 @@
-name: Publish
+name: Publish (Manual - Legacy)
 
 on:
   workflow_dispatch:
-  release:
-    types: [published]
+    inputs:
+      version_type:
+        description: 'Version type to release'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+  # REMOVED: release trigger to avoid conflict with Release Please
+  # release:
+  #   types: [published]
 
+# Enhanced security permissions
 permissions:
-  id-token: write
+  contents: write  # Needed for creating releases and tags
+  id-token: write  # Needed for npm provenance
+  packages: write  # Needed for npm publishing
 
 jobs:
   publish:
-    name: Publish
+    name: Publish to npm
     runs-on: ubuntu-latest
+    environment: production  # Require environment approval
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+        with:
+          # Fetch full history for release notes
+          fetch-depth: 0
 
       - name: Setup
         uses: ./.github/actions/setup
 
-      - name: Prepare
+      - name: Verify package integrity
+        run: |
+          cd packages/react-native-background-remover
+          npm audit --audit-level=high
+          yarn lint
+          yarn typecheck
+
+      - name: Build and prepare package
         run: cd packages/react-native-background-remover && yarn prepare
 
-      - name: Publish
+      - name: Version bump (if manual trigger)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          cd packages/react-native-background-remover
+          npm version ${{ inputs.version_type }} --no-git-tag-version
+          echo "NEW_VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_ENV
+
+      - name: Publish to npm
         run: cd packages/react-native-background-remover && npm publish --provenance --access public
         env:
           NPM_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
+
+      - name: Create GitHub Release (if manual trigger)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          cd packages/react-native-background-remover
+          gh release create v${{ env.NEW_VERSION }} \
+            --title "Release v${{ env.NEW_VERSION }}" \
+            --notes "## Changes in v${{ env.NEW_VERSION }}
+            
+            ### Features
+            - CPU-aware parallel image cropping
+            - Universal background removal (iOS 17+ Vision, Android 24+ MLKit)  
+            - API fallback for older iOS versions
+            
+            ### Performance
+            - ~4x faster on large images with multi-core devices
+            - Smart thread allocation based on CPU cores
+            
+            **Full Changelog**: https://github.com/SIX33-Software/f2-background-remover/compare/v1.0.0...v${{ env.NEW_VERSION }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
