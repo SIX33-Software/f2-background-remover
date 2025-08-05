@@ -1185,7 +1185,7 @@ PODS:
     - React-logger (= 0.74.3)
     - React-perflogger (= 0.74.3)
     - React-utils (= 0.74.3)
-  - ReactNativeBackgroundRemover (1.0.0):
+  - ReactNativeBackgroundRemover (1.3.2):
     - DoubleConversion
     - glog
     - hermes-engine
@@ -1419,15 +1419,15 @@ SPEC CHECKSUMS:
   React-jsitracing: eee70a10f1e17690d33fb46a0989a19657c546a3
   React-logger: bbd09ad59f304e718962b2867534204710873bd9
   React-Mapbuffer: da4470fdf42b2e389efbc4e7af958bf96e921a0b
-  react-native-image-picker: f1006d8935a3bc0baf8157faaa7857c76a77c8bb
+  react-native-image-picker: c28e515626324c11e40d21a4b12982968598f74e
   React-nativeconfig: fa5de9d8f4dbd5917358f8ad3ad1e08762f01dcb
   React-NativeModulesApple: 714d4a6ea3c580c31b25ad01f9650b259fad9818
   React-perflogger: 7bb9ba49435ff66b666e7966ee10082508a203e8
   React-RCTActionSheet: a2816ae2b5c8523c2bc18a8f874a724a096e6d97
   React-RCTAnimation: 082083adea9e61f75be6564120e3f266e9dd2040
-  React-RCTAppDelegate: 5075f1d00c9353105f5b0906ba477db1dd3f4993
+  React-RCTAppDelegate: 213c829037a53aca5657a8373118f344b14fb0ad
   React-RCTBlob: 43976a6aa15df43b12136de396bd72bdced5eb23
-  React-RCTFabric: 5351cfc7d92a1ed66a3fe87fa24fb27db5a5b4d8
+  React-RCTFabric: a00bd72228d02a342279f848d2d6e72f8679b3ce
   React-RCTImage: 0ed46bd0092e0ca29ed7269831934e32b809a934
   React-RCTLinking: 9eeefa11941ce0faded2c9eb2242f0c96db1e23c
   React-RCTNetwork: ec125edeac233d33638b40361238bfbd698e13f6
@@ -1443,10 +1443,10 @@ SPEC CHECKSUMS:
   React-runtimescheduler: 444c28666d8e9d275c600fe3a3cc7f014fa86406
   React-utils: 595335727912553f56aad7f580254ce4ca95a09c
   ReactCommon: 57d127dbf2ca045a07604e13f51c8e97ba176e56
-  ReactNativeBackgroundRemover: 7370903382e572085722aaf312edb25e06e10fc0
+  ReactNativeBackgroundRemover: 8e4c3ac6d13c5cc06fd620bf0d34eebf3fa834cf
   SocketRocket: abac6f5de4d4d62d24e11868d7a2f427e0ef940d
   Yoga: 04f1db30bb810187397fa4c37dd1868a27af229c
 
-PODFILE CHECKSUM: 721e8af372f634234f9c992fd8feb9d37f9e6b43
+PODFILE CHECKSUM: 15bb8d64ffe2f7ddc7bcbbae07f01f57f7654712
 
 COCOAPODS: 1.16.2
