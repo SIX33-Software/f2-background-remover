@@ -1,4 +1,5 @@
 import Vision
+import UIKit // Needed for UIImage
 import CoreImage
 import CoreImage.CIFilterBuiltins
 
@@ -24,42 +25,35 @@ public class BackgroundRemoverSwift: NSObject {
             }
             
             DispatchQueue.global(qos: .userInitiated).async {
-                do {
-                    // Create mask for foreground objects
-                    guard let maskImage = self.createMask(from: originalImage) else {
-                        reject("BackgroundRemover", "Failed to create mask", NSError(domain: "BackgroundRemover", code: 5))
-                        return
-                    }
-                    
-                    // Apply mask to remove background
-                    let maskedImage = self.applyMask(mask: maskImage, to: originalImage)
-                    
-                    // Convert to UIImage
-                    let uiImage = self.convertToUIImage(ciImage: maskedImage)
+                // Autorelease pool to promptly free intermediate CoreImage / Vision objects.
+                autoreleasepool {
+                    do {
+                        // Create mask for foreground objects
+                        guard let maskImage = self.createMask(from: originalImage) else {
+                            reject("BackgroundRemover", "Failed to create mask", NSError(domain: "BackgroundRemover", code: 5))
+                            return
+                        }
+                        
+                        // Apply mask to remove background
+                        let maskedImage = self.applyMask(mask: maskImage, to: originalImage)
+                        
+                        // Convert to UIImage (renders to CGImage)
+                        let uiImage = self.convertToUIImage(ciImage: maskedImage)
 
-                    let finalImage = if trim {
-                        // Trim transparent pixels around the image
-                        self.trimTransparentPixels(from: uiImage)
-                    } else {
-                        uiImage
-                    }
-                    
-                    // Save the image as PNG to preserve transparency
-                    let tempURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(url.lastPathComponent).appendingPathExtension("png")
-                    if let data = finalImage.pngData() {
-                        try data.write(to: tempURL)
-                        DispatchQueue.main.async {
-                            resolve(tempURL.absoluteString)
+                        let finalImage = trim ?
+                            self.trimTransparentPixels(from: uiImage) :
+                            uiImage
+                        
+                        // Save the image as PNG to preserve transparency
+                        let tempURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(url.lastPathComponent).appendingPathExtension("png")
+                        if let data = finalImage.pngData() {
+                            try data.write(to: tempURL, options: .atomic)
+                            DispatchQueue.main.async { resolve(tempURL.absoluteString) }
+                        } else {
+                            DispatchQueue.main.async { reject("BackgroundRemover", "Error saving image", NSError(domain: "BackgroundRemover", code: 7)) }
                         }
-                    } else {
-                        DispatchQueue.main.async {
-                            reject("BackgroundRemover", "Error saving image", NSError(domain: "BackgroundRemover", code: 7))
-                        }
-                    }
-                    
-                } catch {
-                    DispatchQueue.main.async {
-                        reject("BackgroundRemover", "Error removing background", error)
+                    } catch {
+                        DispatchQueue.main.async { reject("BackgroundRemover", "Error removing background", error) }
                     }
                 }
             }

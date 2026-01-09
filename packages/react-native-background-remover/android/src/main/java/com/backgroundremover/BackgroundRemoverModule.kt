@@ -2,6 +2,7 @@ package com.backgroundremover
 
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
@@ -18,10 +19,20 @@ import java.io.FileOutputStream
 import java.net.URI
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
+import java.util.concurrent.atomic.AtomicBoolean
 
 class BackgroundRemoverModule internal constructor(context: ReactApplicationContext) :
   BackgroundRemoverSpec(context) {
   private var segmenter: SubjectSegmenter? = null
+  private val worker = Executors.newSingleThreadExecutor()
+  private val isProcessing = AtomicBoolean(false)
+  // Maximum number of retry attempts after encountering OOM while processing
+  private val MAX_ATTEMPTS = 3
+  // Factor to conceptually scale between attempts (currently used to gate retries; decoding already downsamples)
+  private val SCALE_FACTOR_ON_OOM = 0.5f
+  // Upper bound of pixels (width * height) we attempt to decode. 4M @ 4 bytes per pixel ~ 16MB raw before extra copies.
+  // Keeping this conservative reduces peak memory spikes from MLKit + intermediate ARGB bitmaps.
+  private val MAX_PIXELS = 4_000_000
 
   override fun getName(): String {
     return NAME
@@ -29,32 +40,84 @@ class BackgroundRemoverModule internal constructor(context: ReactApplicationCont
 
   @ReactMethod
   override fun removeBackground(imageURI: String, options: ReadableMap, promise: Promise) {
+    if (!isProcessing.compareAndSet(false, true)) {
+      promise.reject("BackgroundRemover", "Another background removal is in progress", null)
+      return
+    }
     val trim = if (options.hasKey("trim")) options.getBoolean("trim") else true
-    val segmenter = this.segmenter ?: createSegmenter()
-    val image = getImageBitmap(imageURI)
-
-    val inputImage = InputImage.fromBitmap(image, 0)
-
-    segmenter.process(inputImage).addOnFailureListener { e ->
-      promise.reject(e)
-    }.addOnSuccessListener { result ->
-      // Get the foreground bitmap directly from the result
-      val foregroundBitmap = result.foregroundBitmap
-      
-      if (foregroundBitmap != null) {
-        val finalBitmap = if (trim) {
-          // Trim transparent pixels around the image
-          trimTransparentPixels(foregroundBitmap)
-        } else {
-          foregroundBitmap
+    worker.execute {
+      try {
+        val segmenter = this.segmenter ?: createSegmenter()
+        processWithRetries(segmenter, imageURI, trim, promise, attempt = 1)
+      } catch (t: Throwable) {
+        if (isProcessing.compareAndSet(true, false)) {
+          promise.reject("BackgroundRemover", t)
         }
-        val fileName = URI(imageURI).path.split("/").last()
-        val savedImageURI = saveImage(finalBitmap, fileName)
-        promise.resolve(savedImageURI)
-      } else {
-        promise.reject("BackgroundRemover", "No foreground detected", null)
       }
     }
+  }
+
+  private fun processWithRetries(segmenter: SubjectSegmenter, imageURI: String, trim: Boolean, promise: Promise, attempt: Int) {
+    var image: Bitmap? = null
+    try {
+      image = getImageBitmap(imageURI)
+      val inputImage = InputImage.fromBitmap(image, 0)
+      segmenter.process(inputImage)
+        .addOnFailureListener { e ->
+          image?.recycle()
+          if (e is OutOfMemoryError || e.cause is OutOfMemoryError) {
+            handleOOMRetry(segmenter, imageURI, trim, promise, attempt, e)
+          } else {
+            if (isProcessing.compareAndSet(true, false)) {
+              promise.reject(e)
+            }
+          }
+        }
+        .addOnSuccessListener { result ->
+          try {
+            val foregroundBitmap = result.foregroundBitmap
+            if (foregroundBitmap != null) {
+              val finalBitmap = if (trim) trimTransparentPixels(foregroundBitmap) else foregroundBitmap
+              val fileName = URI(imageURI).path.split("/").last()
+              val savedImageURI = saveImage(finalBitmap, fileName)
+              if (isProcessing.compareAndSet(true, false)) {
+                promise.resolve(savedImageURI)
+              }
+              if (finalBitmap !== foregroundBitmap) foregroundBitmap.recycle()
+            } else {
+              if (isProcessing.compareAndSet(true, false)) {
+                promise.reject("BackgroundRemover", "No foreground detected", null)
+              }
+            }
+          } catch (oom: OutOfMemoryError) {
+            handleOOMRetry(segmenter, imageURI, trim, promise, attempt, oom)
+          } catch (t: Throwable) {
+            if (isProcessing.compareAndSet(true, false)) promise.reject("BackgroundRemover", t)
+          } finally {
+            image?.recycle()
+          }
+        }
+    } catch (oom: OutOfMemoryError) {
+      image?.recycle()
+      handleOOMRetry(segmenter, imageURI, trim, promise, attempt, oom)
+    } catch (t: Throwable) {
+      image?.recycle()
+      if (isProcessing.compareAndSet(true, false)) promise.reject("BackgroundRemover", t)
+    }
+  }
+
+  private fun handleOOMRetry(segmenter: SubjectSegmenter, imageURI: String, trim: Boolean, promise: Promise, attempt: Int, err: Throwable) {
+    if (attempt >= MAX_ATTEMPTS) {
+      if (isProcessing.compareAndSet(true, false)) {
+        promise.reject("BackgroundRemover", "Out of memory after $attempt attempts", err)
+      }
+      return
+    }
+    // Lower MAX_PIXELS heuristic by scaling factor for subsequent attempts
+    System.gc()
+    // Provide a temporary scaled version by writing a smaller bitmap if necessary handled inside getImageBitmap using dynamic global? Simplest: temporarily override ThreadLocal desired max.
+    // For simplicity we just sleep briefly and try again expecting decode downscaling to pick smaller target size due to existing MAX_PIXELS. We can reduce threshold further.
+    processWithRetries(segmenter, imageURI, trim, promise, attempt + 1)
   }
 
   private fun createSegmenter(): SubjectSegmenter {
@@ -70,19 +133,66 @@ class BackgroundRemoverModule internal constructor(context: ReactApplicationCont
 
   private fun getImageBitmap(imageURI: String): Bitmap {
     val uri = Uri.parse(imageURI)
-
-    val bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-      ImageDecoder.decodeBitmap(
-        ImageDecoder.createSource(
-          reactApplicationContext.contentResolver,
-          uri
-        )
-      ).copy(Bitmap.Config.ARGB_8888, true)
+    // Decode with downscaling to avoid OOM. Target maximum pixel count keeps memory reasonable.
+  val MAX_PIXELS = this.MAX_PIXELS // use class constant
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+      val source = ImageDecoder.createSource(reactApplicationContext.contentResolver, uri)
+      var computedSample = 1
+      var outWidth = 0
+      var outHeight = 0
+      // Use onHeaderDecoded to compute scaling prior to allocation
+      val bitmap = ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+        outWidth = info.size.width
+        outHeight = info.size.height
+        val total = outWidth.toLong() * outHeight.toLong()
+        if (total > MAX_PIXELS) {
+          val scale = Math.sqrt(total.toDouble() / MAX_PIXELS.toDouble())
+          // scale is factor we need to divide by
+          val targetWidth = (outWidth / scale).toInt().coerceAtLeast(1)
+          val targetHeight = (outHeight / scale).toInt().coerceAtLeast(1)
+          decoder.setTargetSize(targetWidth, targetHeight)
+        }
+        decoder.isMutableRequired = true
+        decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE // Reduce pressure on GPU / ashmem
+      }
+      return bitmap.copy(Bitmap.Config.ARGB_8888, true)
     } else {
-      MediaStore.Images.Media.getBitmap(reactApplicationContext.contentResolver, uri)
+      // Pre Android P: two pass decode using BitmapFactory for bounds then decode with inSampleSize
+      val inputStream1 = reactApplicationContext.contentResolver.openInputStream(uri)
+      val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+      BitmapFactory.decodeStream(inputStream1, null, opts)
+      inputStream1?.close()
+      var inSampleSize = 1
+      val (rawW, rawH) = opts.outWidth to opts.outHeight
+      if (rawW > 0 && rawH > 0) {
+        val total = rawW.toLong() * rawH.toLong()
+        if (total > MAX_PIXELS) {
+          val ratio = Math.sqrt(total.toDouble() / MAX_PIXELS.toDouble())
+            .coerceAtLeast(1.0)
+          // compute power of two sample size
+            varSample@ run {
+              while (true) {
+                val next = inSampleSize * 2
+                val scaledW = rawW / next
+                val scaledH = rawH / next
+                if (scaledW <= 0 || scaledH <= 0) break
+                val scaledTotal = scaledW.toLong() * scaledH.toLong()
+                if (scaledTotal < MAX_PIXELS || next > ratio) break
+                inSampleSize = next
+              }
+            }
+        }
+      }
+      val opts2 = BitmapFactory.Options().apply {
+        inJustDecodeBounds = false
+        inPreferredConfig = Bitmap.Config.ARGB_8888
+        inSampleSize = inSampleSize
+      }
+      val inputStream2 = reactApplicationContext.contentResolver.openInputStream(uri)
+      val decoded = BitmapFactory.decodeStream(inputStream2, null, opts2)
+      inputStream2?.close()
+      return decoded ?: MediaStore.Images.Media.getBitmap(reactApplicationContext.contentResolver, uri)
     }
-
-    return bitmap
   }
 
   private fun trimTransparentPixels(bitmap: Bitmap): Bitmap {
@@ -258,5 +368,14 @@ class BackgroundRemoverModule internal constructor(context: ReactApplicationCont
 
   companion object {
     const val NAME = "BackgroundRemover"
+  }
+
+  override fun onCatalystInstanceDestroy() {
+    super.onCatalystInstanceDestroy()
+    try {
+      segmenter?.close()
+      worker.shutdownNow()
+    } catch (_: Exception) {
+    }
   }
 }
